@@ -273,7 +273,7 @@ class MemoryDataLayer : public BaseDataLayer<Dtype> {
   class MatGenerator {
    public:
     virtual void generate(int batch_size, std::vector<cv::Mat> * mats,
-                          std::vector<int> * labels) = 0;
+                          std::vector<Dtype> * labels) = 0;
     virtual ~MatGenerator() {}
   };
 
@@ -310,7 +310,7 @@ class MemoryDataLayer : public BaseDataLayer<Dtype> {
 
   virtual void AddDatumVector(const vector<Datum>& datum_vector);
   virtual void AddMatVector(const vector<cv::Mat>& mat_vector,
-      const vector<int>& labels);
+      const vector<Dtype>& labels);
 
   /**
    * @brief **Warning**: Reset does not perform transformations.
@@ -336,6 +336,8 @@ class MemoryDataLayer : public BaseDataLayer<Dtype> {
     generate_raw_pointer_cb_ = boost::shared_ptr<RawPointerGenerator>();
   }
   int batch_size_, channels_, height_, width_, size_;
+  int n_labels_;
+  vector<int> label_shape_;
   Dtype* data_;
   Dtype* labels_;
   int n_;

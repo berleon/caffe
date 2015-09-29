@@ -15,15 +15,21 @@ void MemoryDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
   channels_ = this->layer_param_.memory_data_param().channels();
   height_ = this->layer_param_.memory_data_param().height();
   width_ = this->layer_param_.memory_data_param().width();
+  n_labels_ = this->layer_param_.memory_data_param().n_labels();
+  if (!n_labels_) {
+    n_labels_ = 1;
+  }
   size_ = channels_ * height_ * width_;
   CHECK_GT(batch_size_ * size_, 0) <<
       "batch_size, channels, height, and width must be specified and"
       " positive in memory_data_param";
-  vector<int> label_shape(1, batch_size_);
+  label_shape_.push_back(batch_size_);
+  std::cout << "n_lables: " << n_labels_ << std::endl;
+  label_shape_.push_back(n_labels_);
   top[0]->Reshape(batch_size_, channels_, height_, width_);
-  top[1]->Reshape(label_shape);
+  top[1]->Reshape(label_shape_);
   added_data_.Reshape(batch_size_, channels_, height_, width_);
-  added_label_.Reshape(label_shape);
+  added_label_.Reshape(label_shape_);
   data_ = NULL;
   labels_ = NULL;
   added_data_.cpu_data();
@@ -39,7 +45,8 @@ void MemoryDataLayer<Dtype>::AddDatumVector(const vector<Datum>& datum_vector) {
   CHECK_EQ(num % batch_size_, 0) <<
       "The added data must be a multiple of the batch size.";
   added_data_.Reshape(num, channels_, height_, width_);
-  added_label_.Reshape(num, 1, 1, 1);
+  label_shape_[0] = num;
+  added_label_.Reshape(label_shape_);
   // Apply data transformations (mirror, scale, crop...)
   this->data_transformer_->Transform(datum_vector, &added_data_);
   // Copy Labels
@@ -55,15 +62,19 @@ void MemoryDataLayer<Dtype>::AddDatumVector(const vector<Datum>& datum_vector) {
 
 template <typename Dtype>
 void MemoryDataLayer<Dtype>::AddMatVector(const vector<cv::Mat>& mat_vector,
-    const vector<int>& labels) {
+    const vector<Dtype>& labels) {
   size_t num = mat_vector.size();
   CHECK(!has_new_data_) <<
       "Can't add mat until current data has been consumed.";
   CHECK_GT(num, 0) << "There is no mat to add";
   CHECK_EQ(num % batch_size_, 0) <<
       "The added data must be a multiple of the batch size.";
+  CHECK_EQ(num * n_labels_, labels.size()) <<
+      "The labels size must be equal to the number of images multiplied "
+              "by the number of labels per image";
   added_data_.Reshape(num, channels_, height_, width_);
-  added_label_.Reshape(num, 1, 1, 1);
+  label_shape_[0] = num;
+  added_label_.Reshape(label_shape_);
   // Apply data transformations (mirror, scale, crop...)
   this->data_transformer_->Transform(mat_vector, &added_data_);
   // Copy Labels
@@ -94,14 +105,15 @@ void MemoryDataLayer<Dtype>::set_batch_size(int new_size) {
       "Can't change batch_size until current data has been consumed.";
   batch_size_ = new_size;
   added_data_.Reshape(batch_size_, channels_, height_, width_);
-  added_label_.Reshape(batch_size_, 1, 1, 1);
+  label_shape_[0] = batch_size_;
+  added_label_.Reshape(label_shape_);
 }
 
 template <typename Dtype>
 void MemoryDataLayer<Dtype>::HandleGenerators() {
   if (generate_cv_mat_labels_cb_) {
     std::vector<cv::Mat> mats;
-    std::vector<int> labels;
+    std::vector<Dtype> labels;
     generate_cv_mat_labels_cb_->generate(batch_size_, &mats, &labels);
     AddMatVector(mats, labels);
   } else if (generate_datum_cb_) {
@@ -125,9 +137,9 @@ void MemoryDataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
   }
   CHECK(data_) << "MemoryDataLayer needs to be initalized by calling Reset";
   top[0]->Reshape(batch_size_, channels_, height_, width_);
-  top[1]->Reshape(batch_size_, 1, 1, 1);
+  top[1]->Reshape(label_shape_);
   top[0]->set_cpu_data(data_ + pos_ * size_);
-  top[1]->set_cpu_data(labels_ + pos_);
+  top[1]->set_cpu_data(labels_ + pos_ * n_labels_);
   pos_ = (pos_ + batch_size_) % n_;
   if (pos_ == 0)
     has_new_data_ = false;
